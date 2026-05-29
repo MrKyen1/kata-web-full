@@ -22,7 +22,7 @@ interface ApiError {
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:3000/api",
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api",
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",
@@ -103,7 +103,7 @@ apiClient.interceptors.response.use(
 
           if (refreshToken) {
             const response = await axios.post(
-              `${import.meta.env.VITE_API_URL || "http://localhost:3000/api"}/auth/refresh`,
+              `${import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api"}/v1/auth/refresh`,
               { refreshToken }
             );
 

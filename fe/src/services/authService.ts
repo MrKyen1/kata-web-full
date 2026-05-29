@@ -1,4 +1,4 @@
-import { apiPost } from '../api/apiClient';
+import { apiPost, apiPatch, apiGet } from '../api/apiClient';
 import { ApiResponse } from '../api/axiosConfig';
 
 /**
@@ -61,7 +61,7 @@ export async function login(identifier: string, password: string): Promise<Login
       password,
     };
 
-    const response = await apiPost<LoginResponse>('/auth/login', loginDto);
+    const response = await apiPost<LoginResponse>('/v1/auth/login', loginDto);
     return response;
   } catch (error) {
     console.error('[Auth Service] Login failed:', error);
@@ -77,7 +77,7 @@ export async function login(identifier: string, password: string): Promise<Login
 export async function refreshToken(refreshToken: string): Promise<{ accessToken: string }> {
   try {
     const dto: RefreshTokenDto = { refreshToken };
-    const response = await apiPost<{ accessToken: string }>('/auth/refresh', dto);
+    const response = await apiPost<{ accessToken: string }>('/v1/auth/refresh', dto);
     return response;
   } catch (error) {
     console.error('[Auth Service] Token refresh failed:', error);
@@ -90,7 +90,7 @@ export async function refreshToken(refreshToken: string): Promise<{ accessToken:
  */
 export async function logout(): Promise<void> {
   try {
-    await apiPost('/auth/logout', {});
+    await apiPost('/v1/auth/logout', {});
   } catch (error) {
     console.error('[Auth Service] Logout error:', error);
     // Continue with local logout even if API call fails
@@ -111,7 +111,7 @@ export async function changePassword(
       currentPassword,
       newPassword,
     };
-    await apiPost('/auth/change-password', dto);
+    await apiPatch('/v1/auth/change-password', dto);
   } catch (error) {
     console.error('[Auth Service] Change password failed:', error);
     throw error;
@@ -124,7 +124,7 @@ export async function changePassword(
  */
 export async function resetPassword(identifier: string): Promise<void> {
   try {
-    await apiPost('/auth/reset-password', { identifier });
+    await apiPost('/v1/auth/reset-password', { identifier });
   } catch (error) {
     console.error('[Auth Service] Reset password failed:', error);
     throw error;
@@ -137,7 +137,7 @@ export async function resetPassword(identifier: string): Promise<void> {
  */
 export async function updateMe(data: UpdateMeDto): Promise<LoginResponse['user']> {
   try {
-    const response = await apiPost<LoginResponse['user']>('/auth/me', data);
+    const response = await apiPatch<LoginResponse['user']>('/v1/auth/me', data);
     return response;
   } catch (error) {
     console.error('[Auth Service] Update profile failed:', error);
@@ -150,7 +150,7 @@ export async function updateMe(data: UpdateMeDto): Promise<LoginResponse['user']
  */
 export async function getCurrentUser(): Promise<LoginResponse['user']> {
   try {
-    const response = await apiPost<LoginResponse['user']>('/auth/me', {});
+    const response = await apiGet<LoginResponse['user']>('/v1/auth/me');
     return response;
   } catch (error) {
     console.error('[Auth Service] Get current user failed:', error);
