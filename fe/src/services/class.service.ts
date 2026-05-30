@@ -1,8 +1,9 @@
-import api from '../api/axiosConfig'
+import { apiGet, apiPost, apiPatch, apiDelete } from '../api/apiClient'
+
 export const classService = {
-  getAll: (params?: any) => api.get('v1/classes', { params }),
-  getOne: (id: string) => api.get(`v1/classes/${id}`),
-  create: (data: any) => api.post('v1/classes', data),
-  update: (id: string, data: any) => api.patch(`v1/classes/${id}`, data),
-  delete: (id: string) => api.delete(`v1/classes/${id}`),
+  getAll: (params?: any) => apiGet<any[]>('v1/classes', params),
+  getOne: (id: string) => apiGet(`v1/classes/${id}`),
+  create: (data: any) => apiPost('v1/classes', data),
+  update: (id: string, data: any) => apiPatch(`v1/classes/${id}`, data),
+  delete: (id: string) => apiDelete(`v1/classes/${id}`),
 }

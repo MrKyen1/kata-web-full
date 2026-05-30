@@ -31,16 +31,16 @@ const Footer = () => {
       }
 
       // ✅ USER → lấy center từ class
-      const me = await userService.getOne(user?.id);
+    //   const me = await userService.getOne(user?.id);
 
-      let resolvedCenter =
-        me?.student?.classes?.[0]?.class?.center ||
-        me?.teacher?.classes?.[0]?.class?.center;
+    //   let resolvedCenter =
+    //     me?.student?.classes?.[0]?.class?.center ||
+    //     me?.teacher?.classes?.[0]?.class?.center;
 
-      setCenter(resolvedCenter || null);
-    } catch (e) {
-      console.error(e);
-    }
+    //   setCenter(resolvedCenter || null);
+     } catch (e) {
+        console.error(e);
+   }
   };
 
   if (!center) return null;

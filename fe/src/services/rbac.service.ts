@@ -1,16 +1,15 @@
-import api from '../api/axiosConfig'
+import { apiGet, apiPost } from '../api/apiClient'
 
 export const roleService = {
-  getAll: () => api.get('/roles'),
-  create: (data: any) => api.post('v1/roles', data),
+  getAll: () => apiGet<any[]>('/roles'),
+  create: (data: any) => apiPost('v1/roles', data),
 }
 
 export const permissionService = {
-  getAll: () => api.get('v1/permissions'),
+  getAll: () => apiGet<any[]>('v1/permissions'),
 }
 
 export const rolePermissionService = {
-  getMatrix: () => api.get('v1/role-permissions/matrix'),
-  syncMatrix: (data: any) =>
-    api.put('v1/role-permissions/matrix', data),
+  getMatrix: () => apiGet<any[]>('v1/role-permissions/matrix'),
+  syncMatrix: (data: any) => apiPost('v1/role-permissions/matrix', data),
 }

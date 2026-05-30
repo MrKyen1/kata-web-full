@@ -87,7 +87,7 @@ const Header = memo(function Header() {
   ];
 
   return (
-    <AntHeader className="sticky top-0 z-50 flex items-center justify-between bg-white px-4 md:px-12 shadow-sm">
+    <AntHeader className="sticky top-0 z-50 flex items-center justify-between !bg-white px-4 md:px-12 shadow-sm">
       {/* LOGO */}
       <div
         className="flex items-center gap-3 cursor-pointer"

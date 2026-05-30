@@ -26,22 +26,20 @@ import {
   BookOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import {
-  getStudents,
-  addStudent,
-  updateStudent,
-  deleteStudent,
-} from "../utils/adminStorage";
-import { Student } from "../types";
+import { Center } from "../types/center";
+import { centerService } from "../services/center.service";
+import { userService } from "../services/user.service";
+import { classService } from "../services/class.service";
+import { roleService } from "../services/rbac.service";
 
 interface StudentFormValues {
   username: string;
   fullName: string;
-  birthYear?: number;
+  birthYear?: dayjs.Dayjs;
   phone?: string;
   address?: string;
   branch?: string;
-  class?: string;
+  classId?: string;
   startDate?: dayjs.Dayjs;
   endDate?: dayjs.Dayjs;
 }
@@ -50,37 +48,151 @@ import StudentRanking from "./StudentRanking";
 import dayjs from "dayjs";
 
 export default function AdminDashboard() {
-  const [students, setStudents] = useState<Student[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [centers, setCenters] = useState<Center[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [selectedCenterId, setSelectedCenterId] = useState<string | null>(null);
+  const [studentRoleId, setStudentRoleId] = useState<string | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [centerModalVisible, setCenterModalVisible] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<any | null>(null);
   const [form] = Form.useForm();
+  const [centerForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadStudents();
+    loadCenters();
+    loadStudentRole();
   }, []);
 
-  const loadStudents = () => {
-    const data = getStudents();
-    setStudents(data);
+  useEffect(() => {
+    if (selectedCenterId) {
+      loadClasses(selectedCenterId);
+    } else {
+      setClasses([]);
+    }
+  }, [selectedCenterId]);
+
+  const loadStudents = async () => {
+    try {
+      const data = await userService.getAll({ roleCode: "student" });
+      setStudents(
+        (data as any[]).map((student: any) => ({
+          ...student,
+          username: student.code,
+          class: student.student?.classes?.map((item: any) => item.class.name).join(", ") || "",
+          branch:
+            student.student?.classes?.[0]?.class?.center?.name || "",
+          birthYear: student.dateOfBirth
+            ? Number(student.dateOfBirth.split("-")[0])
+            : undefined,
+        })),
+      );
+    } catch (err) {
+      message.error("Không thể tải danh sách học sinh");
+    }
+  };
+
+  const loadCenters = async () => {
+    try {
+      const data = await centerService.getAll();
+      const centers = data as Center[];
+      setCenters(centers);
+      if (!selectedCenterId && centers.length > 0) {
+        setSelectedCenterId(centers[0].id);
+      }
+    } catch (err) {
+      message.error("Không thể tải danh sách trung tâm");
+    }
+  };
+
+  const loadClasses = async (centerId?: string) => {
+    if (!centerId) {
+      setClasses([]);
+      return;
+    }
+
+    try {
+      const data = await classService.getAll({ centerId });
+      setClasses(data as any[]);
+    } catch (err) {
+      message.error("Không thể tải danh sách lớp học");
+    }
+  };
+
+  const loadStudentRole = async () => {
+    try {
+      const roles = await roleService.getAll();
+      const studentRole = (roles as any[]).find(
+        (role: any) => role.code === "student",
+      );
+      setStudentRoleId(studentRole?.id ?? null);
+    } catch (err) {
+      message.error("Không thể tải role học sinh");
+    }
   };
 
   const handleAddStudent = () => {
     setEditingStudent(null);
     form.resetFields();
+    setSelectedCenterId(centers[0]?.id ?? null);
     setIsModalVisible(true);
   };
 
-  const handleEditStudent = (student: Student) => {
+  const handleAddCenter = () => {
+    centerForm.resetFields();
+    setCenterModalVisible(true);
+  };
+
+  const handleCreateCenter = async (values: {
+    name: string;
+    address: string;
+    phone: string;
+    email: string;
+    description?: string;
+    mapEmbedUrl?: string;
+  }) => {
+    try {
+      const payload: any = {
+        name: values.name,
+        address: values.address,
+        phone: values.phone,
+        email: values.email,
+        description: values.description,
+        mapEmbedUrl: values.mapEmbedUrl,
+        isActive: true,
+      };
+
+      await centerService.create(payload);
+      await loadCenters();
+      message.success("Tạo trung tâm thành công!");
+      setCenterModalVisible(false);
+      centerForm.resetFields();
+    } catch (err) {
+      message.error("Tạo trung tâm thất bại");
+    }
+  };
+
+  const handleEditStudent = (student: any) => {
     setEditingStudent(student);
 
+    const centerId = student.student?.classes?.[0]?.class?.center?.id;
+    const classId = student.student?.classes?.[0]?.class?.id;
+
     form.setFieldsValue({
-      ...student,
-      birthYear: student.birthYear ? dayjs(student.birthYear) : null,
+      username: student.code,
+      fullName: student.fullName,
+      birthYear: student.dateOfBirth ? dayjs(student.dateOfBirth) : null,
+      phone: student.phone,
+      address: student.address,
+      branch: centerId,
+      classId,
       startDate: student.startDate ? dayjs(student.startDate) : null,
       endDate: student.endDate ? dayjs(student.endDate) : null,
     });
 
+    setSelectedCenterId(centerId ?? null);
     setIsModalVisible(true);
   };
 
@@ -91,10 +203,14 @@ export default function AdminDashboard() {
       okText: "Xóa",
       okType: "danger",
       cancelText: "Hủy",
-      onOk() {
-        deleteStudent(id);
-        message.success("Đã xóa học sinh!");
-        loadStudents();
+      onOk: async () => {
+        try {
+          await userService.delete(id);
+          message.success("Đã xóa học sinh!");
+          loadStudents();
+        } catch (err) {
+          message.error("Xóa học sinh thất bại");
+        }
       },
     });
   };
@@ -103,27 +219,37 @@ export default function AdminDashboard() {
     setLoading(true);
 
     try {
-      const payload = {
-        ...values,
+      if (!studentRoleId) {
+        message.error("Không tìm thấy vai trò học sinh");
+        return;
+      }
 
-        // convert DatePicker
-        birthYear: values.birthYear?.year(),
-        startDate: values.startDate?.format("YYYY-MM-DD"),
-        endDate: values.endDate?.format("YYYY-MM-DD"),
+      const payload: any = {
+        code: values.username,
+        fullName: values.fullName,
+        dateOfBirth: values.birthYear?.format("YYYY-MM-DD"),
+        phone: values.phone,
+        address: values.address,
+        roleId: studentRoleId,
+        studentProfile: {
+          classIds: values.classId ? [values.classId] : [],
+        },
       };
 
+      if (!editingStudent) {
+        payload.password = "12345678";
+      }
+
       if (editingStudent) {
-        updateStudent(editingStudent.id, payload);
+        await userService.update(editingStudent.id, payload);
         message.success("Cập nhật thành công!");
       } else {
-        addStudent({
-          id: Date.now().toString(),
-          ...payload,
-        });
+        await userService.create(payload);
         message.success("Thêm thành công!");
       }
 
       setIsModalVisible(false);
+      form.resetFields();
       loadStudents();
     } catch (err) {
       message.error("Có lỗi xảy ra!");
@@ -156,6 +282,7 @@ export default function AdminDashboard() {
     {
       title: "Cơ sở",
       dataIndex: "branch",
+      render: (branch: string) => branch || "—",
     },
     {
       title: "Bắt đầu",
@@ -174,7 +301,7 @@ export default function AdminDashboard() {
     },
     {
       title: "Hành động",
-      render: (_: unknown, record: Student) => (
+      render: (_: unknown, record: any) => (
         <Space size="small">
           <Button
             type="primary"
@@ -242,6 +369,43 @@ export default function AdminDashboard() {
         />
       </div>
 
+      {/* Center Management */}
+      <Card
+        title="Quản lý Trung tâm"
+        extra={
+          <Button type="primary" onClick={handleAddCenter}>
+            + Tạo Trung tâm
+          </Button>
+        }
+        className="mb-6"
+      >
+        {centers.length > 0 ? (
+          <Table
+            dataSource={centers}
+            columns={[
+              { title: "Tên trung tâm", dataIndex: "name" },
+              { title: "Địa chỉ", dataIndex: "address" },
+              { title: "SĐT", dataIndex: "phone" },
+              { title: "Email", dataIndex: "email" },
+              {
+                title: "Trạng thái",
+                dataIndex: "isActive",
+                render: (active: boolean) => (
+                  <Tag color={active ? "green" : "default"}>
+                    {active ? "Đang hoạt động" : "Không hoạt động"}
+                  </Tag>
+                ),
+              },
+            ]}
+            rowKey="id"
+            pagination={false}
+            scroll={{ x: 700 }}
+          />
+        ) : (
+          <Empty description="Chưa có trung tâm nào" />
+        )}
+      </Card>
+
       {/* Students Management */}
       <Card
         title="Quản lý Học sinh"
@@ -270,6 +434,44 @@ export default function AdminDashboard() {
           />
         )}
       </Card>
+
+      {/* Modal for creating center */}
+      <Modal
+        title="Tạo Trung tâm"
+        open={centerModalVisible}
+        onOk={() => centerForm.submit()}
+        onCancel={() => setCenterModalVisible(false)}
+      >
+        <Form form={centerForm} layout="vertical" onFinish={handleCreateCenter}>
+          <Form.Item
+            label="Tên trung tâm"
+            name="name"
+            rules={[{ required: true, message: "Nhập tên trung tâm" }]}
+          >
+            <Input placeholder="Tên trung tâm" />
+          </Form.Item>
+
+          <Form.Item label="Địa chỉ" name="address" rules={[{ required: true }]}> 
+            <Input placeholder="Địa chỉ" />
+          </Form.Item>
+
+          <Form.Item label="Số điện thoại" name="phone" rules={[{ required: true }]}> 
+            <Input placeholder="Số điện thoại" />
+          </Form.Item>
+
+          <Form.Item label="Email" name="email" rules={[{ required: true, type: "email" }]}> 
+            <Input placeholder="Email" />
+          </Form.Item>
+
+          <Form.Item label="Mô tả" name="description">
+            <Input.TextArea rows={3} placeholder="Mô tả trung tâm" />
+          </Form.Item>
+
+          <Form.Item label="Map Embed URL" name="mapEmbedUrl">
+            <Input placeholder="URL nhúng bản đồ" />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       {/* Modal for adding/editing student */}
 
@@ -346,42 +548,34 @@ export default function AdminDashboard() {
                 name="branch"
                 rules={[{ required: true }]}
               >
-                <Select placeholder="Chọn cơ sở">
-                  <Select.Option value="cs1">Cơ sở 1</Select.Option>
-                  <Select.Option value="cs2">Cơ sở 2</Select.Option>
+                <Select
+                  placeholder="Chọn cơ sở"
+                  disabled={centers.length === 0}
+                  onChange={(value) => {
+                    setSelectedCenterId(value);
+                    form.setFieldsValue({ classId: undefined });
+                  }}
+                >
+                  {centers.map((center) => (
+                    <Select.Option key={center.id} value={center.id}>
+                      {center.name}
+                    </Select.Option>
+                  ))}
                 </Select>
               </Form.Item>
 
               <Form.Item
                 label="Lớp học"
+                name="classId"
                 rules={[{ required: true }]}
-                shouldUpdate={(prev, curr) => prev.birthYear !== curr.birthYear}
               >
-                {({ getFieldValue }) => {
-                  const year = getFieldValue("birthYear")?.year();
-
-                  let classOptions = [];
-                  if (!year) classOptions = ["Chọn năm sinh trước"];
-                  else if (year >= 2015) classOptions = ["Kids A", "Kids B"];
-                  else if (year >= 2010) classOptions = ["Teen A", "Teen B"];
-                  else classOptions = ["Adult 1", "Adult 2"];
-
-                  return (
-                    <Form.Item
-                      name="class"
-                      rules={[{ required: true }]}
-                      noStyle
-                    >
-                      <Select placeholder="Chọn lớp">
-                        {classOptions.map((cls) => (
-                          <Select.Option key={cls} value={cls}>
-                            {cls}
-                          </Select.Option>
-                        ))}
-                      </Select>
-                    </Form.Item>
-                  );
-                }}
+                <Select placeholder="Chọn lớp" disabled={!classes.length}>
+                  {classes.map((cls) => (
+                    <Select.Option key={cls.id} value={cls.id}>
+                      {cls.name}
+                    </Select.Option>
+                  ))}
+                </Select>
               </Form.Item>
 
               {/* ✅ THAY divider bằng spacing */}

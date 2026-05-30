@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Form, Input, Button, message, Spin, Alert } from "antd";
+import { Form, Input, Button, message, Spin, Alert, Modal } from "antd";
 import { UserOutlined, LockOutlined } from "@ant-design/icons";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -33,8 +33,14 @@ const Login = () => {
       message.success("Đăng nhập thành công!");
       navigate("/");
     } catch (error: any) {
-      // ✅ interceptor đã xử lý message.error rồi
-      setErrorMessage(error?.message || "Đăng nhập thất bại");
+      // show clearer message from API or fallback
+      const apiMessage =
+        error?.message ||
+        error?.response?.data?.message ||
+        "Tài khoản hoặc mật khẩu không đúng";
+
+      message.error(apiMessage);
+      setErrorMessage(apiMessage);
       form.setFieldValue("password", "");
     }
   };
@@ -133,10 +139,22 @@ const Login = () => {
                   <span className="ml-2">Ghi nhớ</span>
                 </label>
 
-                <span
+                {/* <span
                   className="text-blue-600 cursor-pointer"
                   onClick={() => navigate("/forgot-password")}
                 >
+                  Quên mật khẩu?
+                </span> */}
+
+                <span
+                  className="text-blue-600 cursor-pointer hover:underline"
+                  onClick={() =>
+                    Modal.info({
+                      title: "Quên mật khẩu",
+                      content:
+                        "Vui lòng liên hệ Quản lý Trung tâm để được cấp lại hoặc đặt lại mật khẩu.",
+                    })
+                  }>
                   Quên mật khẩu?
                 </span>
               </div>

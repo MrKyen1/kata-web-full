@@ -18,14 +18,14 @@ export async function apiRequest<T = any>(
   return res.data.data
 }
 
-export const apiGet = <T>(url: string, params?: any) =>
+export const apiGet = <T = any>(url: string, params?: any) =>
   apiRequest<T>("GET", url, { params })
 
-export const apiPost = <T>(url: string, data?: any) =>
+export const apiPost = <T = any>(url: string, data?: any) =>
   apiRequest<T>("POST", url, { data })
 
-export const apiPatch = <T>(url: string, data?: any) =>
+export const apiPatch = <T = any>(url: string, data?: any) =>
   apiRequest<T>("PATCH", url, { data })
 
-export const apiDelete = <T>(url: string) =>
+export const apiDelete = <T = any>(url: string) =>
   apiRequest<T>("DELETE", url)

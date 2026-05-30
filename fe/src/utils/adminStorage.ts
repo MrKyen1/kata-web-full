@@ -1,10 +1,12 @@
 import { Student, Teacher, Course, AboutUs } from '../types';
+import { Center } from '../types/center';
 import { teachersData, coursesData } from '../data/mockData';
 
 const STORAGE_KEYS = {
   STUDENTS: 'admin_students',
   TEACHERS: 'admin_teachers',
   COURSES: 'admin_courses',
+  CENTERS: 'admin_centers',
   ABOUT_US: 'admin_aboutUs',
 };
 
@@ -98,6 +100,64 @@ export const updateStudent = (id: string, updates: Partial<Student>): void => {
 export const deleteStudent = (id: string): void => {
   const students = getStudents().filter((s) => s.id !== id);
   saveStudents(students);
+};
+
+/* ===================== CENTERS ===================== */
+export const getCenters = (): Center[] => {
+  const stored = localStorage.getItem(STORAGE_KEYS.CENTERS);
+  if (stored) {
+    return JSON.parse(stored);
+  }
+
+  return [
+    {
+      id: 'cs1',
+      name: 'Trung tâm Hà Nội',
+      address: '123 Phố Láng Hạ, Hà Nội',
+      phone: '0241234567',
+      email: 'hanoi@kata.edu',
+      description: 'Trung tâm chính tại miền Bắc',
+      isActive: true,
+    },
+    {
+      id: 'cs2',
+      name: 'Trung tâm TP. HCM',
+      address: '456 Đường Lê Lợi, TP. HCM',
+      phone: '0287654321',
+      email: 'hcm@kata.edu',
+      description: 'Trung tâm miền Nam',
+      isActive: true,
+    },
+  ];
+};
+
+export const saveCenters = (centers: Center[]): void => {
+  localStorage.setItem(STORAGE_KEYS.CENTERS, JSON.stringify(centers));
+};
+
+export const addCenter = (center: Omit<Center, 'id'>): Center => {
+  const centers = getCenters();
+  const newCenter: Center = {
+    ...center,
+    id: `center_${Date.now()}`,
+  };
+  centers.push(newCenter);
+  saveCenters(centers);
+  return newCenter;
+};
+
+export const updateCenter = (id: string, updates: Partial<Center>): void => {
+  const centers = getCenters();
+  const index = centers.findIndex((c) => c.id === id);
+  if (index !== -1) {
+    centers[index] = { ...centers[index], ...updates };
+    saveCenters(centers);
+  }
+};
+
+export const deleteCenter = (id: string): void => {
+  const centers = getCenters().filter((c) => c.id !== id);
+  saveCenters(centers);
 };
 
 /* ===================== TEACHERS ===================== */
