@@ -1,90 +1,120 @@
 import { Layout, Row, Col, Typography, Space } from "antd";
-import {
-  Phone,
-  Mail,
-  MapPin,
-  MessageCircle,
-  BookOpen,
-} from "lucide-react";
-import { memo } from "react";
+import { Phone, Mail, MapPin, MessageCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { useAuth } from "../contexts/AuthContext";
+import { usePermission } from "../hooks/usePermission";
+
+import { centerService } from "../services/center.service";
+import { userService } from "../services/user.service";
 
 const { Footer: AntFooter } = Layout;
-const { Title, Text, Link } = Typography;
+const { Title, Text } = Typography;
 
-const Footer = memo(function Footer() {
+const Footer = () => {
+  const { user } = useAuth();
+  const { hasPermission } = usePermission();
+
+  const [center, setCenter] = useState<any>(null);
+
+  useEffect(() => {
+    resolveCenter();
+  }, [user]);
+
+  const resolveCenter = async () => {
+    try {
+      // ✅ ADMIN → lấy center mặc định
+      if (hasPermission("classes.manage")) {
+        const centers = await centerService.getAll();
+        setCenter(centers[0]); // hoặc chọn centerId config
+        return;
+      }
+
+      // ✅ USER → lấy center từ class
+      const me = await userService.getOne(user?.id);
+
+      let resolvedCenter =
+        me?.student?.classes?.[0]?.class?.center ||
+        me?.teacher?.classes?.[0]?.class?.center;
+
+      setCenter(resolvedCenter || null);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  if (!center) return null;
+
   return (
-    <AntFooter
-      className="!bg-slate-200 py-12 px-6 md:px-16 mt-auto "
-      id="contact"
-    >
-      <div className="max-w-7xl mx-auto ">
+    <AntFooter className="!bg-slate-200 py-12 px-6 md:px-16 mt-auto">
+      <div className="max-w-7xl mx-auto">
         <Row gutter={[32, 32]}>
+          {/* LEFT */}
           <Col xs={24} md={8}>
-            <div className="flex items-center gap-2 mb-6">
-              <span className="text-2xl font-bold  tracking-tight">
-                KATA LANGUAGE ACADEMY
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-2xl font-bold tracking-tight">
+                {center.name}
               </span>
             </div>
-            <Text className=" block mb-6">
-              Trung tâm giáo dục Kata Edu - Nơi ươm mầm tài năng Việt. Chúng tôi
-              cam kết mang đến chất lượng giáo dục tốt nhất cho học sinh từ
-              10-16 tuổi.
+
+            <Text className="block mb-6">
+              {center.description || "Trung tâm giáo dục chất lượng cao"}
             </Text>
-            <div className="flex items-center gap-3">
-              <MessageCircle className="text-blue-500 shrink-0" size={20} />
-              <a href="https://fb.com/kata" className="text-slate-400">
-                Kata Page
-              </a>
+
+            <div className="flex items-center gap-2">
+              <MessageCircle size={18} />
+              <a href="https://fb.com/kata">Fanpage</a>
             </div>
           </Col>
 
+          {/* CONTACT */}
           <Col xs={24} md={8}>
-            <Title level={4} className=" mb-6">
-              Thông tin liên hệ
-            </Title>
-            <Space direction="vertical" size="middle" className="w-full">
-              <div className="flex items-start gap-3">
-                <MapPin className="text-blue-500 mt-1 shrink-0" size={20} />
-                <Text className="text-slate-400">
-                  123 Đình Cả, Quảng Minh, Việt Yên, Bắc Giang
-                </Text>
+            <Title level={4}>Thông tin liên hệ</Title>
+
+            <Space direction="vertical">
+              <div className="flex gap-2">
+                <MapPin size={18} />
+                <Text>{center.address}</Text>
               </div>
-              <div className="flex items-center gap-3">
-                <Phone className="text-blue-500 shrink-0" size={20} />
-                <Text className="text-slate-400">0123 456 789</Text>
+
+              <div className="flex gap-2">
+                <Phone size={18} />
+                <Text>{center.phone}</Text>
               </div>
-              <div className="flex items-center gap-3">
-                <Mail className="text-blue-500 shrink-0" size={20} />
-                <Text className="text-slate-400">contact@kataedu.vn</Text>
+
+              <div className="flex gap-2">
+                <Mail size={18} />
+                <Text>{center.email}</Text>
               </div>
             </Space>
           </Col>
 
+          {/* MAP */}
           <Col xs={24} md={8}>
-            <Title level={4} className="text-white mb-6">
-              Bản đồ
-            </Title>
-            <div className="w-full h-48 rounded-xl overflow-hidden shadow-lg border border-amber-50">
-              <iframe
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3718.4552851639846!2d106.12792497512365!3d21.25343838045273!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x31350dc2b53aaaa7%3A0x2c21448f641c767d!2zTmdv4bqhaSBuZ-G7ryBLQVRB!5e0!3m2!1svi!2s!4v1773211786824!5m2!1svi!2s"
-                width="100%"
-                height="100%"
-                style={{ border: 0 }}
-                allowFullScreen={true}
-                loading="lazy"
-              ></iframe>
+            <Title level={4}>Bản đồ</Title>
+
+            <div className="w-full h-48 rounded-xl overflow-hidden">
+              {center.mapEmbedUrl ? (
+                <iframe
+                  src={center.mapEmbedUrl}
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0 }}
+                  loading="lazy"
+                />
+              ) : (
+                <div>Không có bản đồ</div>
+              )}
             </div>
           </Col>
         </Row>
 
-        <div className="border-t border-slate-800 mt-12 pt-8 text-center">
-          <Text className="text-slate-500">
-            © 2026 Kata Language Academy. All rights reserved.
-          </Text>
+        <div className="mt-10 text-center">
+          <Text>© 2026 {center.name}</Text>
         </div>
       </div>
     </AntFooter>
   );
-});
+};
 
 export default Footer;

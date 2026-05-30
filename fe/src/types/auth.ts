@@ -9,11 +9,20 @@ export interface LoginDto {
   password: string; // min 8 chars
 }
 
+
 export interface LoginResponse {
-  accessToken: string;
-  refreshToken: string;
-  user: User;
+  user: {
+    id: string
+    code: string
+    role: {
+      code: string
+      permissions: string[]
+    }
+  }
+  accessToken: string
+  refreshToken: string
 }
+
 
 // ==================== USER ====================
 export interface User {
@@ -154,4 +163,15 @@ export interface ApiError {
   message: string;
   statusCode: number;
   errors?: Record<string, string[]>;
+}
+
+export interface AuthContextType {
+  user: User | null
+  isLoggedIn: boolean
+  isLoading: boolean
+  error: string | null
+
+  login: (identifier: string, password: string) => Promise<void>
+  logout: () => Promise<void> 
+  refreshAccessToken: () => Promise<void>
 }

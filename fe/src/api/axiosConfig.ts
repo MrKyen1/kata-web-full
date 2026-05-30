@@ -1,188 +1,135 @@
-import axios, {
-  AxiosInstance,
-  AxiosError,
-  InternalAxiosRequestConfig,
-  AxiosResponse,
-} from "axios";
-import { message } from "antd";
+import axios, { AxiosError } from "axios"
+import { message } from "antd"
+import type { ApiError, ApiResponse } from "./types"
 
-// Define API response types
-interface ApiResponse<T = any> {
-  success: boolean;
-  data: T;
-  message: string;
-  statusCode: number;
-}
-
-interface ApiError {
-  message: string;
-  statusCode: number;
-  errors?: Record<string, string[]>;
-}
-
-// Create axios instance
-const apiClient: AxiosInstance = axios.create({
+const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api",
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",
   },
-});
+})
 
-// ==================== REQUEST INTERCEPTOR ====================
-apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    // Get token from localStorage
-    const token = localStorage.getItem("authToken");
+/* ================= REQUEST ================= */
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("accessToken")
 
-    // Add authorization header if token exists
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-
-    // Add custom headers
-    config.headers["X-Requested-With"] = "XMLHttpRequest";
-    config.headers["timestamp"] = new Date().getTime().toString();
-
-    console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, {
-      data: config.data,
-    });
-
-    return config;
-  },
-  (error: AxiosError) => {
-    console.error("[API Request Error]", error);
-    return Promise.reject(error);
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
   }
-);
 
-// ==================== RESPONSE INTERCEPTOR ====================
+  return config
+})
+
+/* ================= RESPONSE ================= */
 apiClient.interceptors.response.use(
-  (response: AxiosResponse<ApiResponse>) => {
-    // Log successful response
-    console.log(
-      `[API Response] ${response.config.method?.toUpperCase()} ${response.config.url}`,
-      {
-        statusCode: response.status,
-        data: response.data,
-      }
-    );
+  (response) => {
+    const data = response.data as ApiResponse
 
-    // Check if response has success flag
-    if (response.data && response.data.success === false) {
+    // ❗ Backend trả success = false
+    if (data?.success === false) {
       const error: ApiError = {
-        message: response.data.message || "Có lỗi xảy ra",
-        statusCode: response.data.statusCode,
-        errors: response.data.errors,
-      };
-      return Promise.reject(error);
-    }
-
-    return response;
-  },
-  async (error: AxiosError<ApiError>) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & {
-      _retry?: boolean;
-    };
-
-    console.error("[API Response Error]", {
-      status: error.response?.status,
-      message: error.response?.data?.message || error.message,
-      url: error.config?.url,
-    });
-
-    // ==================== 401 - TOKEN EXPIRED ====================
-    if (error.response?.status === 401) {
-      // Avoid retry loop
-      if (!originalRequest._retry) {
-        originalRequest._retry = true;
-
-        try {
-          // Try to refresh token
-          const refreshToken = localStorage.getItem("refreshToken");
-
-          if (refreshToken) {
-            const response = await axios.post(
-              `${import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api"}/v1/auth/refresh`,
-              { refreshToken }
-            );
-
-            if (response.data.data.accessToken) {
-              // Save new token
-              localStorage.setItem("authToken", response.data.data.accessToken);
-
-              // Update header
-              originalRequest.headers.Authorization = `Bearer ${response.data.data.accessToken}`;
-
-              // Retry original request
-              return apiClient(originalRequest);
-            }
-          }
-        } catch (refreshError) {
-          console.error("[Token Refresh Error]", refreshError);
-          // If refresh fails, redirect to login
-          handleAuthError();
-          return Promise.reject(refreshError);
-        }
+        message: data.message || "Có lỗi xảy ra",
+        statusCode: data.statusCode || 400,
       }
 
-      // If already retried, handle auth error
-      handleAuthError();
-      return Promise.reject(error);
+      message.error(error.message)
+      return Promise.reject(error)
     }
 
-    // ==================== 403 - FORBIDDEN ====================
-    if (error.response?.status === 403) {
-      message.error("Bạn không có quyền truy cập tài nguyên này");
-      return Promise.reject(error);
+    return response
+  },
+
+  async (error: AxiosError<ApiError>) => {
+    const originalRequest: any = error.config
+
+    const status = error.response?.status
+    const apiMessage =
+      error.response?.data?.message || error.message || "Có lỗi xảy ra"
+
+    console.error("[API ERROR]", {
+      status,
+      message: apiMessage,
+      url: originalRequest?.url,
+    })
+
+    /* ================= 401: TOKEN EXPIRED ================= */
+    if (status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        const refreshToken = localStorage.getItem("refreshToken")
+
+        if (!refreshToken) throw new Error("No refresh token")
+
+        const res = await axios.post(
+          `${import.meta.env.VITE_API_BASE_URL}/auth/refresh` || "http://localhost:3000/api/v1/auth/refresh",
+          { refreshToken }
+        )
+
+        const { accessToken, refreshToken: newRefresh } = res.data.data
+
+        // ✅ save new token
+        localStorage.setItem("accessToken", accessToken)
+        localStorage.setItem("refreshToken", newRefresh)
+
+        // ✅ retry request
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`
+        return apiClient(originalRequest)
+      } catch (refreshError) {
+        return handleAuthError(refreshError)
+      }
     }
 
-    // ==================== 404 - NOT FOUND ====================
-    if (error.response?.status === 404) {
-      message.error("Tài nguyên không tìm thấy");
-      return Promise.reject(error);
+    /* ================= 403 ================= */
+    if (status === 403) {
+      message.error("Bạn không có quyền truy cập")
     }
 
-    // ==================== 500 - SERVER ERROR ====================
-    if (error.response?.status === 500) {
-      message.error("Lỗi máy chủ. Vui lòng thử lại sau");
-      return Promise.reject(error);
+    /* ================= 404 ================= */
+    if (status === 404) {
+      message.error("Không tìm thấy dữ liệu")
     }
 
-    // ==================== NETWORK ERROR ====================
+    /* ================= 500 ================= */
+    if (status === 500) {
+      message.error("Lỗi server, vui lòng thử lại sau")
+    }
+
+    /* ================= NETWORK ================= */
     if (!error.response) {
-      message.error("Lỗi kết nối. Vui lòng kiểm tra mạng của bạn");
+      message.error("Lỗi mạng, kiểm tra kết nối")
       return Promise.reject({
-        message: "Lỗi kết nối",
+        message: "Network error",
         statusCode: 0,
-      } as ApiError);
+      } as ApiError)
     }
 
-    // ==================== OTHER ERRORS ====================
+    /* ================= DEFAULT ================= */
     const apiError: ApiError = {
-      message: error.response?.data?.message || error.message || "Có lỗi xảy ra",
-      statusCode: error.response?.status || 500,
+      message: apiMessage,
+      statusCode: status || 500,
       errors: error.response?.data?.errors,
-    };
+    }
 
-    message.error(apiError.message);
-    return Promise.reject(apiError);
+    message.error(apiError.message)
+
+    return Promise.reject(apiError)
   }
-);
+)
 
-// ==================== ERROR HANDLER ====================
-function handleAuthError() {
-  // Clear auth data
-  localStorage.removeItem("authToken");
-  localStorage.removeItem("refreshToken");
-  localStorage.removeItem("user");
+/* ================= AUTH ERROR ================= */
 
-  // Show error message
-  message.error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại");
+function handleAuthError(error: any) {
+  console.error("[AUTH ERROR]", error)
 
-  // Redirect to login
-  window.location.href = "/login";
+  localStorage.clear()
+
+  message.error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.")
+
+  window.location.href = "/login"
+
+  return Promise.reject(error)
 }
 
-export default apiClient;
-export type { ApiResponse, ApiError };
+export default apiClient

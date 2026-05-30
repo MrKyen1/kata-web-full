@@ -1,167 +1,101 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import * as authService from '../services/authService';
-import { message } from 'antd';
+import { createContext, useContext, useEffect, useState } from "react";
+import api from "../api/axiosConfig";
 
-// User type matching backend response
-interface User {
-  id: string;
-  code: string;
-  fullName: string;
-  email: string;
-  phone: string;
-  avatar?: string;
-  roleId: string;
-  role: {
-    id: string;
-    code: string;
-    name: string;
-  };
-}
+import { setTokens, logout as logoutStorage } from "../utils/authStorage";
+import { authService } from "../services/auth.service";
 
-interface AuthContextType {
-  user: User | null;
-  isLoggedIn: boolean;
-  isLoading: boolean;
-  login: (identifier: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  refreshAccessToken: () => Promise<void>;
-  error: string | null;
-}
+// ✅ IMPORT TYPE TỪ types/auth.ts
+import type { User, AuthContextType } from "../types/auth";
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+/* ================= CONTEXT ================= */
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+const AuthContext = createContext<AuthContextType>(null as any);
+
+/* ================= PROVIDER ================= */
+
+export const AuthProvider = ({ children }: any) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize user from localStorage
-  useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    const token = localStorage.getItem('authToken');
+  const isLoggedIn = !!user;
 
-    if (savedUser && token) {
-      try {
-        const parsedUser = JSON.parse(savedUser);
-        setUser(parsedUser);
-      } catch (err) {
-        console.error('Failed to parse saved user:', err);
-        localStorage.removeItem('user');
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('refreshToken');
-      }
-    }
-  }, []);
+  /* ================= LOGIN ================= */
 
-  /**
-   * Login with identifier and password
-   * Handles: username, email, or phone
-   */
-  const login = useCallback(async (identifier: string, password: string) => {
+  const login = async (identifier: string, password: string) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      // Validate inputs
-      if (!identifier.trim()) {
-        throw new Error('Vui lòng nhập tên đăng nhập, email hoặc số điện thoại');
-      }
+      const res = await authService.login({ identifier, password });
 
-      if (!password || password.length < 8) {
-        throw new Error('Mật khẩu phải có ít nhất 8 ký tự');
-      }
+      const { user, accessToken, refreshToken } = res;
 
-      // Call API
-      const response = await authService.login(identifier, password);
+      setTokens(accessToken, refreshToken);
 
-      // Save tokens
-      localStorage.setItem('authToken', response.accessToken);
-      localStorage.setItem('refreshToken', response.refreshToken);
+      localStorage.setItem("user", JSON.stringify(user));
 
-      // Save user data
-      localStorage.setItem('user', JSON.stringify(response.user));
-      setUser(response.user);
-
-      message.success('Đăng nhập thành công!');
-    } catch (err) {
-      const errorMessage = (err as any)?.message || 'Đăng nhập thất bại';
-      setError(errorMessage);
-      console.error('[AuthContext] Login error:', err);
+      setUser(user);
+    } catch (err: any) {
+      setError(err.message || "Đăng nhập thất bại");
       throw err;
     } finally {
       setIsLoading(false);
     }
-  }, []);
-
-  /**
-   * Logout - clear tokens and user
-   */
-  const logout = useCallback(async () => {
-    setIsLoading(true);
-
-    try {
-      // Call logout API to notify backend
-      await authService.logout();
-    } catch (err) {
-      console.error('[AuthContext] Logout API error:', err);
-      // Continue with local logout even if API fails
-    } finally {
-      // Clear local auth state
-      setUser(null);
-      setError(null);
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
-      setIsLoading(false);
-    }
-  }, []);
-
-  /**
-   * Refresh access token using refresh token
-   * Called by axios interceptor when 401 error occurs
-   */
-  const refreshAccessToken = useCallback(async () => {
-    try {
-      const refreshToken = localStorage.getItem('refreshToken');
-
-      if (!refreshToken) {
-        throw new Error('No refresh token available');
-      }
-
-      const response = await authService.refreshToken(refreshToken);
-      localStorage.setItem('authToken', response.accessToken);
-
-      // If we need new refresh token (usually same one is returned)
-      // This is handled by the backend response
-    } catch (err) {
-      console.error('[AuthContext] Token refresh failed:', err);
-      // If refresh fails, logout user
-      await logout();
-      throw err;
-    }
-  }, [logout]);
-
-  const value: AuthContextType = {
-    user,
-    isLoggedIn: !!user && !!localStorage.getItem('authToken'),
-    isLoading,
-    login,
-    logout,
-    refreshAccessToken,
-    error,
   };
 
+  /* ================= REFRESH USER ================= */
+
+  const refreshAccessToken = async () => {
+    const res = await api.get("/auth/me");
+    const user = res.data.data;
+
+    setUser(user);
+  };
+
+  /* ================= LOGOUT ================= */
+
+  const logout = async () => {
+    try {
+      const refreshToken = localStorage.getItem("refreshToken");
+
+      if (refreshToken) {
+        await authService.logout({ refreshToken });
+      }
+    } catch (e) {}
+
+    logoutStorage();
+    setUser(null);
+  };
+
+  /* ================= INIT ================= */
+
+  useEffect(() => {
+    const stored = localStorage.getItem("user");
+
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      setUser(parsed);
+    }
+  }, []);
+
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isLoggedIn,
+        isLoading,
+        error,
+        login,
+        logout,
+        refreshAccessToken,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
-}
+};
 
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-}
+/* ================= HOOK ================= */
+
+export const useAuth = () => useContext(AuthContext);
