@@ -1,0 +1,1156 @@
+======================================================================
+FRONTEND TODO GUIDE - AUTH, USERS, CENTERS, CLASSES, SPECIALIZATIONS
+Backend: NestJS
+Frontend: Vite React
+======================================================================
+
+
+======================================================================
+0. API BASE CONFIG
+======================================================================
+
+Backend base URL:
+
+  http://localhost:3000/api/v1
+
+Vite .env:
+
+  VITE_API_BASE_URL=http://localhost:3000/api/v1
+
+IMPORTANT:
+  Nếu axios baseURL đã là http://localhost:3000/api/v1
+  thì khi gọi API KHÔNG thêm /api/v1 nữa.
+
+Correct:
+  api.post("auth/login")
+  api.get("centers")
+  api.get("classes")
+  api.get("specializations")
+
+Wrong:
+  api.post("/api/v1/auth/login")
+  api.post("v1/auth/login")
+
+
+======================================================================
+1. COMMON RESPONSE FORMAT
+======================================================================
+
+Success response:
+
+  {
+    "success": true,
+    "data": ...,
+    "meta": ...,
+    "requestId": "...",
+    "timestamp": "..."
+  }
+
+Frontend chỉ dùng:
+
+  response.data.data
+
+
+Error response:
+
+  {
+    "success": false,
+    "statusCode": 400,
+    "errorCode": "BAD_REQUEST",
+    "message": "Dữ liệu không hợp lệ",
+    "fieldErrors": {
+      "email": ["email must be an email"]
+    },
+    "path": "/api/v1/...",
+    "requestId": "...",
+    "timestamp": "..."
+  }
+
+Frontend cần show:
+  error.response.data.message
+
+Nếu có validate lỗi từng field:
+  error.response.data.fieldErrors
+
+
+======================================================================
+2. AXIOS CLIENT CẦN LÀM
+======================================================================
+
+Tạo file ví dụ:
+
+  src/api/axiosConfig.ts
+  src/api/apiClient.ts
+
+Axios config:
+
+  - baseURL lấy từ import.meta.env.VITE_API_BASE_URL
+  - Content-Type: application/json
+  - timeout: 30000
+  - tự động gắn Authorization Bearer token nếu có accessToken
+  - nếu 401 thì gọi refresh token
+  - nếu refresh lỗi thì clear localStorage và redirect về /login
+
+Pseudo code:
+
+  const api = axios.create({
+    baseURL: import.meta.env.VITE_API_BASE_URL,
+    timeout: 30000,
+    headers: {
+      "Content-Type": "application/json"
+    }
+  })
+
+  api.interceptors.request.use((config) => {
+    const token = localStorage.getItem("accessToken")
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  })
+
+Helper functions nên có:
+
+  apiGet(url, params)
+  apiPost(url, data)
+  apiPatch(url, data)
+  apiDelete(url)
+
+Mỗi helper return trực tiếp:
+
+  res.data.data
+
+
+======================================================================
+3. AUTH TODO
+======================================================================
+
+Routes backend:
+
+  POST  /auth/login
+  POST  /auth/refresh
+  POST  /auth/logout
+  POST  /auth/logout-all
+  GET   /auth/me
+  PATCH /auth/me
+  PATCH /auth/change-password
+  POST  /auth/reset-password
+
+Public routes, không cần token:
+
+  POST /auth/login
+  POST /auth/refresh
+
+Các route còn lại cần:
+
+  Authorization: Bearer <accessToken>
+
+
+----------------------------------------------------------------------
+3.1 LOGIN
+----------------------------------------------------------------------
+
+Endpoint:
+
+  POST /auth/login
+
+Payload:
+
+  {
+    "identifier": "admin",
+    "password": "Admin@123456"
+  }
+
+Dev account:
+
+  identifier: admin
+  password: Admin@123456
+
+Response data:
+
+  {
+    "user": {
+      "id": "...",
+      "code": "admin",
+      "fullName": "System Administrator",
+      "phone": "...",
+      "email": "...",
+      "role": {
+        "id": "...",
+        "code": "admin",
+        "name": "Administrator",
+        "permissions": [
+          "users.manage",
+          "rbac.manage",
+          "learning.manage",
+          "classes.manage",
+          "request-logs.read",
+          "audit-logs.read"
+        ]
+      }
+    },
+    "accessToken": "...",
+    "refreshToken": "..."
+  }
+
+Frontend cần làm:
+
+  1. Tạo màn hình login.
+  2. Form gồm:
+       identifier
+       password
+  3. Submit gọi POST auth/login.
+  4. Nếu thành công:
+       localStorage.setItem("accessToken", accessToken)
+       localStorage.setItem("refreshToken", refreshToken)
+       localStorage.setItem("user", JSON.stringify(user))
+  5. Lưu user vào AuthContext.
+  6. Redirect về dashboard/admin page.
+  7. Nếu lỗi, show message từ backend.
+
+
+----------------------------------------------------------------------
+3.2 GET CURRENT USER
+----------------------------------------------------------------------
+
+Endpoint:
+
+  GET /auth/me
+
+Frontend cần làm:
+
+  1. Khi app reload, kiểm tra localStorage có accessToken không.
+  2. Nếu có token, gọi GET auth/me.
+  3. Nếu thành công, set user vào AuthContext.
+  4. Nếu lỗi 401 và refresh fail, logout.
+  5. Dùng user.role.permissions để kiểm tra quyền hiển thị menu/button.
+
+
+----------------------------------------------------------------------
+3.3 REFRESH TOKEN
+----------------------------------------------------------------------
+
+Endpoint:
+
+  POST /auth/refresh
+
+Payload:
+
+  {
+    "refreshToken": "<refreshToken>"
+  }
+
+Frontend cần làm trong axios interceptor:
+
+  1. Nếu API trả 401.
+  2. Lấy refreshToken từ localStorage.
+  3. Gọi POST auth/refresh.
+  4. Nhận accessToken và refreshToken mới.
+  5. Save lại localStorage.
+  6. Retry request cũ.
+  7. Nếu refresh lỗi, logout.
+
+
+----------------------------------------------------------------------
+3.4 LOGOUT
+----------------------------------------------------------------------
+
+Endpoint:
+
+  POST /auth/logout
+
+Payload:
+
+  {
+    "refreshToken": "<refreshToken>"
+  }
+
+Frontend cần làm:
+
+  1. Khi user bấm logout:
+       gọi POST auth/logout với refreshToken hiện tại.
+  2. Dù API thành công hay lỗi vẫn nên:
+       localStorage.removeItem("accessToken")
+       localStorage.removeItem("refreshToken")
+       localStorage.removeItem("user")
+       clear AuthContext
+       redirect /login
+
+
+----------------------------------------------------------------------
+3.5 LOGOUT ALL
+----------------------------------------------------------------------
+
+Endpoint:
+
+  POST /auth/logout-all
+
+Payload:
+
+  Không cần body.
+
+Frontend dùng khi muốn đăng xuất tất cả phiên đăng nhập của user.
+
+
+----------------------------------------------------------------------
+3.6 UPDATE ME
+----------------------------------------------------------------------
+
+Endpoint:
+
+  PATCH /auth/me
+
+Payload:
+
+  {
+    "fullName": "Nguyen Van A",
+    "phone": "0900000000",
+    "email": "a@example.com",
+    "dateOfBirth": "2000-01-01",
+    "address": "Ha Noi",
+    "avatar": "https://..."
+  }
+
+Frontend cần làm nếu có trang profile:
+
+  1. Tạo form profile.
+  2. Gọi PATCH auth/me.
+  3. Sau khi update, gọi lại GET auth/me hoặc update AuthContext.
+
+
+----------------------------------------------------------------------
+3.7 CHANGE PASSWORD
+----------------------------------------------------------------------
+
+Endpoint:
+
+  PATCH /auth/change-password
+
+Payload:
+
+  {
+    "currentPassword": "old-password",
+    "newPassword": "new-password"
+  }
+
+Rule:
+  newPassword tối thiểu 8 ký tự.
+
+Frontend cần làm:
+
+  1. Form đổi mật khẩu.
+  2. Validate newPassword >= 8.
+  3. Gọi API.
+  4. Backend sẽ logout tất cả session.
+  5. Sau khi đổi thành công, clear localStorage và redirect login.
+
+
+======================================================================
+4. PERMISSION TODO
+======================================================================
+
+Các permission liên quan:
+
+  users.manage
+    - dùng cho Users
+    - reset password
+
+  classes.manage
+    - dùng cho Centers
+    - Classes
+    - Specializations
+
+Frontend cần làm:
+
+  function hasPermission(permission) {
+    return user?.role?.permissions?.includes(permission)
+  }
+
+Ẩn/hiện menu:
+
+  Users:
+    show nếu hasPermission("users.manage")
+
+  Centers:
+    show nếu hasPermission("classes.manage")
+
+  Classes:
+    show nếu hasPermission("classes.manage")
+
+  Specializations:
+    show nếu hasPermission("classes.manage")
+
+Nếu API trả 403:
+  show "Bạn không có quyền truy cập"
+
+
+======================================================================
+5. USERS TODO
+======================================================================
+
+Backend routes:
+
+  POST   /users
+  GET    /users
+  GET    /users/:id
+  PATCH  /users/:id
+  DELETE /users/:id
+
+Required permission:
+
+  users.manage
+
+
+----------------------------------------------------------------------
+5.1 USERS LIST
+----------------------------------------------------------------------
+
+Endpoint:
+
+  GET /users
+
+Query params supported:
+
+  isActive?: boolean
+  search?: string
+  code?: string
+  phone?: string
+  email?: string
+  roleId?: string
+  roleCode?: string
+  classId?: string
+  centerId?: string
+  specializationId?: string
+
+Frontend cần làm:
+
+  1. Tạo trang Users Management.
+  2. Gọi GET users.
+  3. Hiển thị table:
+       code
+       fullName
+       phone
+       email
+       role
+       isActive
+       createdAt
+  4. Có ô search.
+  5. Có filter roleCode nếu cần:
+       admin
+       teacher
+       student
+  6. Có button create/edit/delete nếu có users.manage.
+
+
+Example:
+
+  apiGet("users", {
+    search: keyword,
+    isActive: true,
+    roleCode: "teacher"
+  })
+
+
+----------------------------------------------------------------------
+5.2 USER DETAIL
+----------------------------------------------------------------------
+
+Endpoint:
+
+  GET /users/:id
+
+Frontend cần làm:
+
+  1. Khi bấm xem/sửa user, gọi GET users/:id.
+  2. Fill data vào form edit.
+
+
+----------------------------------------------------------------------
+5.3 CREATE USER
+----------------------------------------------------------------------
+
+Endpoint:
+
+  POST /users
+
+Payload basic:
+
+  {
+    "code": "user001",
+    "password": "12345678",
+    "fullName": "Nguyen Van A",
+    "dateOfBirth": "2000-01-01",
+    "phone": "0900000000",
+    "email": "a@example.com",
+    "address": "Ha Noi",
+    "roleId": "<roleId>",
+    "avatar": "https://..."
+  }
+
+Required fields:
+
+  code
+  password
+  fullName
+  dateOfBirth
+  phone
+  roleId
+
+Optional fields:
+
+  email
+  address
+  avatar
+
+Rule:
+
+  password tối thiểu 8 ký tự
+  email phải đúng format email
+  dateOfBirth nên là YYYY-MM-DD
+
+Nếu tạo teacher, có thể thêm:
+
+  {
+    "teacherProfile": {
+      "yearsOfExperience": 2,
+      "description": "English teacher",
+      "classIds": ["<classId>"],
+      "specializationIds": ["<specializationId>"]
+    }
+  }
+
+Nếu tạo student, có thể thêm:
+
+  {
+    "studentProfile": {
+      "classIds": ["<classId>"]
+    }
+  }
+
+Frontend cần làm:
+
+  1. Tạo modal/page Create User.
+  2. Load roles từ GET /roles để chọn roleId.
+  3. Nếu role teacher:
+       show teacherProfile fields.
+       load classes và specializations.
+  4. Nếu role student:
+       show studentProfile fields.
+       load classes.
+  5. Submit POST users.
+  6. Thành công thì reload list.
+
+
+----------------------------------------------------------------------
+5.4 UPDATE USER
+----------------------------------------------------------------------
+
+Endpoint:
+
+  PATCH /users/:id
+
+Payload:
+  Gửi các field cần sửa, không gửi field thừa.
+
+Example:
+
+  {
+    "fullName": "Nguyen Van B",
+    "phone": "0911111111",
+    "email": "b@example.com",
+    "address": "Ho Chi Minh",
+    "avatar": "https://...",
+    "roleId": "<roleId>",
+    "isActive": true
+  }
+
+Frontend cần làm:
+
+  1. Tạo edit form.
+  2. Chỉ gửi field backend hỗ trợ.
+  3. Sau khi update thành công, reload table.
+
+
+----------------------------------------------------------------------
+5.5 DELETE USER
+----------------------------------------------------------------------
+
+Endpoint:
+
+  DELETE /users/:id
+
+Note:
+  Backend thường deactivate user, không nhất thiết xóa cứng.
+
+Frontend cần làm:
+
+  1. Confirm trước khi delete.
+  2. Gọi DELETE users/:id.
+  3. Reload list.
+  4. Có thể ghi label UI là "Deactivate" thay vì "Delete".
+
+
+======================================================================
+6. CENTERS TODO
+======================================================================
+
+Backend routes:
+
+  POST   /centers
+  GET    /centers
+  GET    /centers/:id
+  PATCH  /centers/:id
+  DELETE /centers/:id
+
+Required permission:
+
+  classes.manage
+
+
+----------------------------------------------------------------------
+6.1 CENTERS LIST
+----------------------------------------------------------------------
+
+Endpoint:
+
+  GET /centers
+
+Query params:
+
+  isActive?: boolean
+  search?: string
+
+Frontend cần làm:
+
+  1. Tạo trang Centers Management.
+  2. Gọi GET centers.
+  3. Hiển thị table/card:
+       name
+       address
+       phone
+       email
+       description
+       image
+       isActive
+  4. Có search theo tên.
+  5. Có filter active/inactive nếu cần.
+  6. Có create/edit/delete buttons.
+
+
+Example:
+
+  apiGet("centers", {
+    search: keyword,
+    isActive: true
+  })
+
+
+----------------------------------------------------------------------
+6.2 CREATE CENTER
+----------------------------------------------------------------------
+
+Endpoint:
+
+  POST /centers
+
+Payload:
+
+  {
+    "name": "Kata Center",
+    "address": "Ha Noi",
+    "phone": "0900000000",
+    "email": "center@example.com",
+    "description": "Main center",
+    "image": "https://...",
+    "mapEmbedUrl": "https://...",
+    "isActive": true
+  }
+
+Required fields:
+
+  name
+  address
+  phone
+  email
+
+Optional fields:
+
+  description
+  image
+  mapEmbedUrl
+  isActive
+
+Frontend cần làm:
+
+  1. Tạo create center form/modal.
+  2. Validate email đúng format.
+  3. Submit POST centers.
+  4. Thành công thì reload list.
+
+
+----------------------------------------------------------------------
+6.3 UPDATE CENTER
+----------------------------------------------------------------------
+
+Endpoint:
+
+  PATCH /centers/:id
+
+Payload:
+  Gửi các field cần sửa.
+
+Example:
+
+  {
+    "name": "Kata Center Updated",
+    "address": "Da Nang",
+    "phone": "0922222222",
+    "email": "updated@example.com",
+    "description": "Updated",
+    "image": "https://...",
+    "mapEmbedUrl": "https://...",
+    "isActive": true
+  }
+
+Frontend cần làm:
+
+  1. Khi edit, gọi GET centers/:id hoặc dùng data trong table.
+  2. Fill form.
+  3. Submit PATCH centers/:id.
+  4. Reload list.
+
+
+----------------------------------------------------------------------
+6.4 DELETE CENTER
+----------------------------------------------------------------------
+
+Endpoint:
+
+  DELETE /centers/:id
+
+Frontend cần làm:
+
+  1. Confirm trước khi delete.
+  2. Gọi DELETE centers/:id.
+  3. Reload list.
+
+
+======================================================================
+7. CLASSES TODO
+======================================================================
+
+Backend routes:
+
+  POST   /classes
+  GET    /classes
+  GET    /classes/:id
+  PATCH  /classes/:id
+  DELETE /classes/:id
+
+Required permission:
+
+  classes.manage
+
+
+----------------------------------------------------------------------
+7.1 CLASSES LIST
+----------------------------------------------------------------------
+
+Endpoint:
+
+  GET /classes
+
+Query params:
+
+  isActive?: boolean
+  search?: string
+  centerId?: string
+
+Frontend cần làm:
+
+  1. Tạo trang Classes Management.
+  2. Gọi GET classes.
+  3. Hiển thị table:
+       name
+       center
+       description
+       image
+       isActive
+  4. Có search.
+  5. Có filter theo centerId.
+  6. Muốn filter center thì load centers trước:
+       GET /centers
+
+
+Example:
+
+  apiGet("classes", {
+    search: keyword,
+    centerId: selectedCenterId,
+    isActive: true
+  })
+
+
+----------------------------------------------------------------------
+7.2 CREATE CLASS
+----------------------------------------------------------------------
+
+Endpoint:
+
+  POST /classes
+
+Payload:
+
+  {
+    "name": "Class A1",
+    "centerId": "<centerId>",
+    "description": "Description",
+    "image": "https://..."
+  }
+
+Required fields:
+
+  name
+  centerId
+
+Optional fields:
+
+  description
+  image
+
+Frontend cần làm:
+
+  1. Tạo create class form/modal.
+  2. Load centers để chọn centerId.
+  3. Submit POST classes.
+  4. Thành công thì reload list.
+
+
+----------------------------------------------------------------------
+7.3 UPDATE CLASS
+----------------------------------------------------------------------
+
+Endpoint:
+
+  PATCH /classes/:id
+
+Payload:
+
+  {
+    "name": "Class A1 Updated",
+    "centerId": "<centerId>",
+    "description": "Updated description",
+    "image": "https://..."
+  }
+
+Frontend cần làm:
+
+  1. Khi edit, load centers để user chọn center.
+  2. Fill form.
+  3. Submit PATCH classes/:id.
+  4. Reload list.
+
+
+----------------------------------------------------------------------
+7.4 DELETE CLASS
+----------------------------------------------------------------------
+
+Endpoint:
+
+  DELETE /classes/:id
+
+Frontend cần làm:
+
+  1. Confirm trước khi delete.
+  2. Gọi DELETE classes/:id.
+  3. Reload list.
+
+
+======================================================================
+8. SPECIALIZATIONS TODO
+======================================================================
+
+Backend routes:
+
+  POST   /specializations
+  GET    /specializations
+  GET    /specializations/:id
+  PATCH  /specializations/:id
+  DELETE /specializations/:id
+
+Required permission:
+
+  classes.manage
+
+
+----------------------------------------------------------------------
+8.1 SPECIALIZATIONS LIST
+----------------------------------------------------------------------
+
+Endpoint:
+
+  GET /specializations
+
+Query params:
+
+  isActive?: boolean
+  search?: string
+
+Frontend cần làm:
+
+  1. Tạo trang Specializations Management.
+  2. Gọi GET specializations.
+  3. Hiển thị table:
+       code
+       name
+       description
+       isActive
+  4. Có search.
+  5. Có create/edit/delete buttons.
+
+
+Example:
+
+  apiGet("specializations", {
+    search: keyword,
+    isActive: true
+  })
+
+
+----------------------------------------------------------------------
+8.2 CREATE SPECIALIZATION
+----------------------------------------------------------------------
+
+Endpoint:
+
+  POST /specializations
+
+Payload:
+
+  {
+    "name": "IELTS",
+    "code": "ielts",
+    "description": "IELTS course"
+  }
+
+Required fields:
+
+  name
+  code
+
+Optional fields:
+
+  description
+
+Frontend cần làm:
+
+  1. Tạo create specialization form/modal.
+  2. Validate code không rỗng.
+  3. Submit POST specializations.
+  4. Reload list.
+
+
+----------------------------------------------------------------------
+8.3 UPDATE SPECIALIZATION
+----------------------------------------------------------------------
+
+Endpoint:
+
+  PATCH /specializations/:id
+
+Payload:
+
+  {
+    "name": "IELTS Advanced",
+    "code": "ielts-advanced",
+    "description": "Advanced IELTS course"
+  }
+
+Frontend cần làm:
+
+  1. Fill edit form.
+  2. Submit PATCH specializations/:id.
+  3. Reload list.
+
+
+----------------------------------------------------------------------
+8.4 DELETE SPECIALIZATION
+----------------------------------------------------------------------
+
+Endpoint:
+
+  DELETE /specializations/:id
+
+Frontend cần làm:
+
+  1. Confirm trước khi delete.
+  2. Gọi DELETE specializations/:id.
+  3. Reload list.
+
+
+======================================================================
+9. UI PAGES CẦN CÓ
+======================================================================
+
+Auth pages:
+
+  /login
+    - login form
+    - save token
+    - redirect dashboard
+
+  /profile optional
+    - GET auth/me
+    - PATCH auth/me
+
+  /change-password optional
+    - PATCH auth/change-password
+
+
+Admin pages:
+
+  /admin/users
+    - users table
+    - search/filter
+    - create user
+    - edit user
+    - delete/deactivate user
+
+  /admin/centers
+    - centers table
+    - search
+    - create center
+    - edit center
+    - delete center
+
+  /admin/classes
+    - classes table
+    - search
+    - filter by center
+    - create class
+    - edit class
+    - delete class
+
+  /admin/specializations
+    - specializations table
+    - search
+    - create specialization
+    - edit specialization
+    - delete specialization
+
+
+======================================================================
+10. SHARED COMPONENTS NÊN TẠO
+======================================================================
+
+Components:
+
+  ProtectedRoute
+    - nếu không có token thì redirect /login
+
+  PermissionGuard
+    - check user.role.permissions
+
+  ConfirmDeleteModal
+    - dùng chung cho users, centers, classes, specializations
+
+  SearchInput
+    - debounce search
+
+  FormModal
+    - dùng chung create/edit nếu muốn
+
+  LoadingState
+  EmptyState
+  ErrorState
+
+
+Services:
+
+  authService
+    login
+    me
+    refresh
+    logout
+    logoutAll
+    updateMe
+    changePassword
+
+  userService
+    getUsers
+    getUserById
+    createUser
+    updateUser
+    deleteUser
+
+  centerService
+    getCenters
+    getCenterById
+    createCenter
+    updateCenter
+    deleteCenter
+
+  classService
+    getClasses
+    getClassById
+    createClass
+    updateClass
+    deleteClass
+
+  specializationService
+    getSpecializations
+    getSpecializationById
+    createSpecialization
+    updateSpecialization
+    deleteSpecialization
+
+  roleService
+    getRoles
+    getRoleById
+
+
+======================================================================
+11. IMPORTANT RULES FOR COPILOT
+======================================================================
+
+1. Do not add /api/v1 inside service URLs.
+   baseURL already includes /api/v1.
+
+2. Every protected request must send:
+   Authorization: Bearer accessToken
+
+3. Always read backend data from:
+   response.data.data
+
+4. Do not send extra fields.
+   Backend rejects unknown fields with 400.
+
+5. Use backend message for error display:
+   error.response.data.message
+
+6. Use fieldErrors for form validation messages when available.
+
+7. DELETE endpoints should show confirmation before calling API.
+
+8. After create/update/delete, reload the related list.
+
+9. For Classes form, load Centers first to select centerId.
+
+10. For Users form, load Roles first to select roleId.
+
+11. For teacher user form, load Classes and Specializations.
+
+12. For student user form, load Classes.
+
+13. Hide menu/buttons if user does not have required permission.
+
+14. If 401 and refresh fails:
+    clear localStorage and redirect /login.
+
+15. If 403:
+    show "Bạn không có quyền truy cập".
+
+
+======================================================================
+END
+======================================================================
