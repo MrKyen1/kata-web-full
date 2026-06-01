@@ -27,7 +27,10 @@ export const AuthProvider = ({ children }: any) => {
     setError(null);
 
     try {
-      const res = await authService.login({ identifier, password });
+      const res = await authService.login(
+        { identifier, password },
+        { showErrorMessage: false }
+      );
 
       const { user, accessToken, refreshToken } = res;
 

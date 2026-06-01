@@ -28,10 +28,14 @@ export class CentersService {
 
   async findAll(query: { isActive?: boolean; search?: string } = {}) {
     const qb = this.centerRepository
-      .createQueryBuilder('center')
-      .where('center.is_active = :isActive', {
-        isActive: query.isActive ?? true,
+      .createQueryBuilder('center');
+    
+    if (query.isActive !== undefined) {
+      qb.where('center.is_active = :isActive', {
+        isActive: query.isActive,
       });
+    }
+    
     if (query.search) {
       qb.andWhere(
         '(center.name ILIKE :search OR center.address ILIKE :search)',

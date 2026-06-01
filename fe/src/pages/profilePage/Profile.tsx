@@ -29,7 +29,6 @@ import { useAuth } from "../../contexts/AuthContext";
 import { getStudents } from "../../utils/adminStorage";
 import AdminDashboard from "../../components/AdminDashboard";
 import AdminCourses from "../../components/AdminCourses";
-import AdminTeachers from "../../components/AdminTeachers";
 import AdminAboutUs from "../../components/AdminAboutUs";
 import CenterManagment from "../../components/CenterManagment";
 import StudentRanking from "../../components/StudentRanking";
@@ -227,8 +226,6 @@ export default function Profile() {
         return <AdminDashboard />;
       case "courses":
         return <AdminCourses />;
-      case "teachers":
-        return <AdminTeachers />;
       case "centers":
         return <CenterManagment />;
       case "about":
@@ -248,11 +245,6 @@ export default function Profile() {
       key: "courses",
       icon: <BookOutlined />,
       label: "Quản lý Khóa học",
-    },
-    {
-      key: "teachers",
-      icon: <TeamOutlined />,
-      label: "Giáo viên",
     },
     {
       key: "centers",

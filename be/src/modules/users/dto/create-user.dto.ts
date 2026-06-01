@@ -19,18 +19,21 @@ export class CreateUserTeacherProfileDto {
   @Min(0)
   yearsOfExperience?: number;
 
+  @IsOptional()
   @IsString()
-  description!: string;
+  description?: string;
 
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @IsUUID(undefined, { each: true })
-  classIds!: string[];
+  classIds?: string[];
 
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @IsUUID(undefined, { each: true })
-  specializationIds!: string[];
+  specializationIds?: string[];
 }
 
 export class CreateUserStudentProfileDto {

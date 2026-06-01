@@ -17,6 +17,7 @@ import {
   DatePicker,
   Select,
   Divider,
+  Checkbox,
 } from "antd";
 import {
   UserAddOutlined,
@@ -56,6 +57,7 @@ export default function AdminDashboard() {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [centerModalVisible, setCenterModalVisible] = useState(false);
   const [editingStudent, setEditingStudent] = useState<any | null>(null);
+  const [editingCenter, setEditingCenter] = useState<any | null>(null);
   const [form] = Form.useForm();
   const [centerForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -142,7 +144,48 @@ export default function AdminDashboard() {
 
   const handleAddCenter = () => {
     centerForm.resetFields();
+    centerForm.setFieldsValue({ isActive: true }); // ✅ Mặc định active
+    setEditingCenter(null);
     setCenterModalVisible(true);
+  };
+
+  const normalizeMapEmbedUrl = (value?: string) => {
+    if (!value || typeof value !== "string") return value
+    const match = value.match(/src=["']([^"']+)["']/)
+    return match ? match[1] : value
+  }
+
+  const handleEditCenter = (center: any) => {
+    setEditingCenter(center);
+    centerForm.setFieldsValue({
+      name: center.name,
+      address: center.address,
+      phone: center.phone,
+      email: center.email,
+      description: center.description,
+      mapEmbedUrl: center.mapEmbedUrl,
+      isActive: center.isActive,
+    });
+    setCenterModalVisible(true);
+  };
+
+  const handleDeleteCenter = (id: string) => {
+    Modal.confirm({
+      title: "Xác nhận xóa",
+      content: "Bạn có chắc chắn muốn xóa trung tâm này?",
+      okText: "Xóa",
+      okType: "danger",
+      cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          await centerService.delete(id);
+          message.success("Đã xóa trung tâm!");
+          loadCenters();
+        } catch (err) {
+          message.error("Xóa trung tâm thất bại");
+        }
+      },
+    });
   };
 
   const handleCreateCenter = async (values: {
@@ -152,6 +195,7 @@ export default function AdminDashboard() {
     email: string;
     description?: string;
     mapEmbedUrl?: string;
+    isActive?: boolean;
   }) => {
     try {
       const payload: any = {
@@ -160,17 +204,27 @@ export default function AdminDashboard() {
         phone: values.phone,
         email: values.email,
         description: values.description,
-        mapEmbedUrl: values.mapEmbedUrl,
-        isActive: true,
+        mapEmbedUrl: normalizeMapEmbedUrl(values.mapEmbedUrl),
+        isActive: values.isActive !== undefined ? values.isActive : true,
       };
 
-      await centerService.create(payload);
+      console.log("Center payload:", payload);
+
+      if (editingCenter) {
+        await centerService.update(editingCenter.id, payload);
+        message.success("Cập nhật trung tâm thành công!");
+      } else {
+        await centerService.create(payload);
+        message.success("Tạo trung tâm thành công!");
+      }
+
       await loadCenters();
-      message.success("Tạo trung tâm thành công!");
       setCenterModalVisible(false);
       centerForm.resetFields();
+      setEditingCenter(null);
     } catch (err) {
-      message.error("Tạo trung tâm thất bại");
+      //console.error("Center operation error", err);
+      message.error(editingCenter ? "Cập nhật trung tâm thất bại" : "Tạo trung tâm thất bại");
     }
   };
 
@@ -396,6 +450,29 @@ export default function AdminDashboard() {
                   </Tag>
                 ),
               },
+              {
+                title: "Hành động",
+                render: (_: unknown, record: any) => (
+                  <Space size="small">
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => handleEditCenter(record)}
+                    >
+                      Sửa
+                    </Button>
+                    <Button
+                      danger
+                      size="small"
+                      icon={<DeleteOutlined />}
+                      onClick={() => handleDeleteCenter(record.id)}
+                    >
+                      Xóa
+                    </Button>
+                  </Space>
+                ),
+              },
             ]}
             rowKey="id"
             pagination={false}
@@ -435,12 +512,16 @@ export default function AdminDashboard() {
         )}
       </Card>
 
-      {/* Modal for creating center */}
+      {/* Modal for creating/editing center */}
       <Modal
-        title="Tạo Trung tâm"
+        title={editingCenter ? "Chỉnh sửa Trung tâm" : "Tạo Trung tâm"}
         open={centerModalVisible}
         onOk={() => centerForm.submit()}
-        onCancel={() => setCenterModalVisible(false)}
+        onCancel={() => {
+          setCenterModalVisible(false);
+          setEditingCenter(null);
+          centerForm.resetFields();
+        }}
       >
         <Form form={centerForm} layout="vertical" onFinish={handleCreateCenter}>
           <Form.Item
@@ -469,6 +550,10 @@ export default function AdminDashboard() {
 
           <Form.Item label="Map Embed URL" name="mapEmbedUrl">
             <Input placeholder="URL nhúng bản đồ" />
+          </Form.Item>
+
+          <Form.Item label="Trạng thái" name="isActive" valuePropName="checked">
+            <Checkbox>Đang hoạt động</Checkbox>
           </Form.Item>
         </Form>
       </Modal>

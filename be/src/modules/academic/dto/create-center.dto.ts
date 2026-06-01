@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString } from 'class-validator';
 
 export class CreateCenterDto {
   @IsString()
@@ -24,4 +24,9 @@ export class CreateCenterDto {
   @IsOptional()
   @IsString()
   mapEmbedUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @IsBoolean()
+  isActive: boolean = true; // ✅ Mặc định active
 }

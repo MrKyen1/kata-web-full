@@ -1,9 +1,16 @@
-import axios, { AxiosError } from "axios"
+import axios, { AxiosError, AxiosRequestConfig } from "axios"
 import { message } from "antd"
 import type { ApiError, ApiResponse } from "./types"
 
+interface CustomRequestConfig extends AxiosRequestConfig {
+  showErrorMessage?: boolean
+  _retry?: boolean
+}
+
+const apiBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:3000/api/v1"
+
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api",
+  baseURL: apiBaseUrl,
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",
@@ -12,6 +19,7 @@ const apiClient = axios.create({
 
 /* ================= REQUEST ================= */
 apiClient.interceptors.request.use((config) => {
+  config.headers = config.headers || {}
   const token = localStorage.getItem("accessToken")
 
   if (token) {
@@ -25,6 +33,7 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => {
     const data = response.data as ApiResponse
+    const requestConfig = response.config as CustomRequestConfig
 
     // ❗ Backend trả success = false
     if (data?.success === false) {
@@ -33,7 +42,9 @@ apiClient.interceptors.response.use(
         statusCode: data.statusCode || 400,
       }
 
-      message.error(error.message)
+      if (requestConfig.showErrorMessage !== false) {
+        message.error(error.message)
+      }
       return Promise.reject(error)
     }
 
@@ -41,11 +52,12 @@ apiClient.interceptors.response.use(
   },
 
   async (error: AxiosError<ApiError>) => {
-    const originalRequest: any = error.config
+    const originalRequest: CustomRequestConfig = error.config as CustomRequestConfig
 
     const status = error.response?.status
     const apiMessage =
       error.response?.data?.message || error.message || "Có lỗi xảy ra"
+    const shouldDisplayMessage = originalRequest.showErrorMessage !== false
 
     console.error("[API ERROR]", {
       status,
@@ -54,18 +66,35 @@ apiClient.interceptors.response.use(
     })
 
     /* ================= 401: TOKEN EXPIRED ================= */
+    const isAuthEndpoint = (url?: string) =>
+      !!url && (url.includes("/auth/login") || url.includes("/auth/refresh"))
+
     if (status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
+
+      if (isAuthEndpoint(originalRequest.url)) {
+        return Promise.reject({
+          message: apiMessage,
+          statusCode: 401,
+        } as ApiError)
+      }
 
       try {
         const refreshToken = localStorage.getItem("refreshToken")
 
-        if (!refreshToken) throw new Error("No refresh token")
+        if (!refreshToken) {
+          return Promise.reject({
+            message: apiMessage,
+            statusCode: 401,
+          } as ApiError)
+        }
 
-        const res = await axios.post(
-          `${import.meta.env.VITE_API_BASE_URL}/auth/refresh` || "http://localhost:3000/api/v1/auth/refresh",
-          { refreshToken }
-        )
+        const refreshBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL
+        const refreshUrl = refreshBaseUrl
+          ? `${refreshBaseUrl}/auth/refresh`
+          : "http://localhost:3000/api/v1/auth/refresh"
+
+        const res = await axios.post(refreshUrl, { refreshToken })
 
         const { accessToken, refreshToken: newRefresh } = res.data.data
 
@@ -74,6 +103,7 @@ apiClient.interceptors.response.use(
         localStorage.setItem("refreshToken", newRefresh)
 
         // ✅ retry request
+        originalRequest.headers = originalRequest.headers || {}
         originalRequest.headers.Authorization = `Bearer ${accessToken}`
         return apiClient(originalRequest)
       } catch (refreshError) {
@@ -82,23 +112,25 @@ apiClient.interceptors.response.use(
     }
 
     /* ================= 403 ================= */
-    if (status === 403) {
+    if (status === 403 && shouldDisplayMessage) {
       message.error("Bạn không có quyền truy cập")
     }
 
     /* ================= 404 ================= */
-    if (status === 404) {
+    if (status === 404 && shouldDisplayMessage) {
       message.error("Không tìm thấy dữ liệu")
     }
 
     /* ================= 500 ================= */
-    if (status === 500) {
+    if (status === 500 && shouldDisplayMessage) {
       message.error("Lỗi server, vui lòng thử lại sau")
     }
 
     /* ================= NETWORK ================= */
     if (!error.response) {
-      message.error("Lỗi mạng, kiểm tra kết nối")
+      if (shouldDisplayMessage) {
+        message.error("Lỗi mạng, kiểm tra kết nối")
+      }
       return Promise.reject({
         message: "Network error",
         statusCode: 0,
@@ -112,7 +144,9 @@ apiClient.interceptors.response.use(
       errors: error.response?.data?.errors,
     }
 
-    message.error(apiError.message)
+    if (shouldDisplayMessage) {
+      message.error(apiError.message)
+    }
 
     return Promise.reject(apiError)
   }

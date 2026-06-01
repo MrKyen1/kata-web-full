@@ -39,7 +39,6 @@ const Login = () => {
         error?.response?.data?.message ||
         "Tài khoản hoặc mật khẩu không đúng";
 
-      message.error(apiMessage);
       setErrorMessage(apiMessage);
       form.setFieldValue("password", "");
     }
